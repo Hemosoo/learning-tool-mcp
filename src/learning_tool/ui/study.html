@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Study session</title>
+<style>
+  :root {
+    --font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --radius: 10px;
+    --background: #ffffff;
+    --background-secondary: #f4f4f5;
+    --text-primary: #18181b;
+    --text-secondary: #71717a;
+    --border: #d4d4d8;
+    --success-background: #dcfce7;
+    --success-text: #166534;
+    --danger-background: #fee2e2;
+    --danger-text: #991b1b;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --background: #18181b;
+      --background-secondary: #27272a;
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --border: #3f3f46;
+      --success-background: #14532d;
+      --success-text: #bbf7d0;
+      --danger-background: #7f1d1d;
+      --danger-text: #fecaca;
+    }
+  }
+
+  /* An explicit host theme wins over the operating-system preference. */
+  :root[data-theme="dark"] {
+    --background: #18181b;
+    --background-secondary: #27272a;
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --border: #3f3f46;
+    --success-background: #14532d;
+    --success-text: #bbf7d0;
+    --danger-background: #7f1d1d;
+    --danger-text: #fecaca;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 16px;
+    font-family: var(--font-family);
+    font-size: 14px;
+    line-height: 1.5;
+    background: var(--background);
+    color: var(--text-primary);
+  }
+
+  h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 2px;
+  }
+
+  .muted {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin: 0 0 12px;
+  }
+
+  .card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--background-secondary);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .prompt {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    white-space: pre-wrap;
+  }
+
+  .answer {
+    margin: 0 0 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    white-space: pre-wrap;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  button {
+    font: inherit;
+    color: var(--text-primary);
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  button:hover:not(:disabled) { border-color: var(--text-secondary); }
+  button:disabled { opacity: 0.55; cursor: default; }
+
+  input[type="text"], select {
+    font: inherit;
+    color: var(--text-primary);
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+  }
+
+  input[type="text"] { flex: 1 1 180px; min-width: 0; }
+
+  .confidence {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .flash {
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 13px;
+  }
+
+  .flash.ok { background: var(--success-background); color: var(--success-text); }
+  .flash.bad { background: var(--danger-background); color: var(--danger-text); }
+
+  .progress {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .progress strong { color: var(--text-primary); font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function () {
+  "use strict";
+
+  var PROTOCOL_VERSION = "2026-01-26";
+  var APP_INFO = { name: "learning-tool-study-widget", version: "0.7.0" };
+  var CONFIDENCE_LEVELS = ["guessed", "unsure", "confident"];
+
+  var state = {
+    documentId: null,
+    title: "",
+    queue: [],
+    index: 0,
+    revealed: false,
+    confidence: "",
+    progress: null,
+    flash: null,
+    busy: false,
+    status: "Connecting to host…"
+  };
+
+  /* ---------------------------------------------------------------- bridge */
+
+  var pending = new Map();
+  var nextRequestId = 1;
+  var lastSize = { width: -1, height: -1 };
+  var ready = false;
+  var initialized = false;
+  var initializeAttempts = 0;
+  var INITIALIZE_RETRY_MS = 400;
+  var MAX_INITIALIZE_ATTEMPTS = 12;
+
+  function post(message) {
+    window.parent.postMessage(message, "*");
+  }
+
+  function request(method, params) {
+    var id = nextRequestId++;
+    return new Promise(function (resolve, reject) {
+      pending.set(id, { resolve: resolve, reject: reject });
+      post({ jsonrpc: "2.0", id: id, method: method, params: params });
+    });
+  }
+
+  function notify(method, params) {
+    post({ jsonrpc: "2.0", method: method, params: params });
+  }
+
+  var requestHandlers = {
+    "ui/resource-teardown": function () {
+      return {};
+    }
+  };
+
+  var notificationHandlers = {
+    "ui/notifications/host-context-changed": function (params) {
+      applyHostContext(params);
+      render();
+    },
+    "ui/notifications/tool-input": function (params) {
+      var args = params.arguments || params.input || params;
+      if (args && typeof args.document_id === "number") {
+        state.documentId = args.document_id;
+      }
+    },
+    "ui/notifications/tool-result": function (params) {
+      handleToolResult(params);
+    },
+    "ui/notifications/request-teardown": function () {
+      state.status = "The host closed this study session.";
+      render();
+    },
+    "ui/notifications/tool-cancelled": function () {
+      state.status = "The study request was cancelled.";
+      render();
+    }
+  };
+
+  window.addEventListener("message", function (event) {
+    var message = event.data;
+    if (!message || message.jsonrpc !== "2.0") {
+      return;
+    }
+    if (message.id !== undefined && message.id !== null && pending.has(message.id)) {
+      var entry = pending.get(message.id);
+      pending.delete(message.id);
+      if (message.error) {
+        entry.reject(new Error(message.error.message || "The host returned an error."));
+      } else {
+        entry.resolve(message.result);
+      }
+      return;
+    }
+    if (message.id !== undefined && message.id !== null) {
+      var responder = requestHandlers[message.method];
+      if (responder) {
+        post({ jsonrpc: "2.0", id: message.id, result: responder(message.params || {}) });
+      }
+      return;
+    }
+    var handler = notificationHandlers[message.method];
+    if (handler) {
+      handler(message.params || {});
+    }
+  });
+
+  function applyHostContext(context) {
+    if (!context) {
+      return;
+    }
+    var styles = context.styles || {};
+    var variables = styles.variables || context.styleVariables;
+    if (variables) {
+      Object.keys(variables).forEach(function (key) {
+        var name = key.indexOf("--") === 0 ? key : "--" + key;
+        document.documentElement.style.setProperty(name, String(variables[key]));
+      });
+    }
+    if (context.theme) {
+      document.documentElement.style.colorScheme = context.theme;
+      document.documentElement.setAttribute("data-theme", context.theme);
+    }
+  }
+
+  function notifySize() {
+    if (!ready) {
+      return;
+    }
+    var width = document.body.scrollWidth;
+    var height = document.body.scrollHeight;
+    if (width === lastSize.width && height === lastSize.height) {
+      return;
+    }
+    lastSize = { width: width, height: height };
+    notify("ui/notifications/size-changed", { width: width, height: height });
+  }
+
+  function observeSize() {
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(notifySize).observe(document.body);
+    }
+    notifySize();
+  }
+
+  function initialize() {
+    if (initialized) {
+      return;
+    }
+    initializeAttempts += 1;
+    request("ui/initialize", {
+      protocolVersion: PROTOCOL_VERSION,
+      appInfo: APP_INFO,
+      appCapabilities: { availableDisplayModes: ["inline"] }
+    }).then(function (result) {
+      if (initialized) {
+        return;
+      }
+      initialized = true;
+      applyHostContext(result && result.hostContext);
+      notify("ui/notifications/initialized", {});
+      ready = true;
+      observeSize();
+      if (state.status === "Connecting to host…") {
+        state.status = "Waiting for due items…";
+      }
+      render();
+    }, function (error) {
+      if (initialized || initializeAttempts < MAX_INITIALIZE_ATTEMPTS) {
+        return;
+      }
+      state.status = "Could not connect to the host: " + error.message;
+      render();
+    });
+    if (initializeAttempts < MAX_INITIALIZE_ATTEMPTS) {
+      window.setTimeout(initialize, INITIALIZE_RETRY_MS);
+      return;
+    }
+    window.setTimeout(function () {
+      if (initialized) {
+        return;
+      }
+      state.status =
+        "The host did not answer the initialize handshake after " +
+        MAX_INITIALIZE_ATTEMPTS +
+        " attempts.";
+      render();
+    }, INITIALIZE_RETRY_MS);
+  }
+
+  /* ------------------------------------------------------------ tool calls */
+
+  function errorText(result) {
+    var parts = (result && result.content) || [];
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i] && parts[i].type === "text" && parts[i].text) {
+        return parts[i].text;
+      }
+    }
+    return "The tool call failed.";
+  }
+
+  function extractPayload(result) {
+    if (!result) {
+      return null;
+    }
+    if (result.structuredContent) {
+      return result.structuredContent;
+    }
+    var parts = result.content || [];
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i] && parts[i].type === "text" && typeof parts[i].text === "string") {
+        return JSON.parse(parts[i].text);
+      }
+    }
+    return null;
+  }
+
+  function loadQueue(payload) {
+    if (!payload || !Array.isArray(payload.due)) {
+      throw new Error("The due-items payload could not be read.");
+    }
+    if (typeof payload.document_id === "number") {
+      state.documentId = payload.document_id;
+    }
+    state.title = payload.title || state.title;
+    state.queue = payload.due;
+    state.index = 0;
+    state.revealed = false;
+    state.status = null;
+  }
+
+  function handleToolResult(result) {
+    try {
+      if (result && result.isError) {
+        state.status = errorText(result);
+      } else {
+        loadQueue(extractPayload(result));
+      }
+    } catch (error) {
+      state.status = "Could not read the study items: " + error.message;
+    }
+    render();
+  }
+
+  function callTool(name, args) {
+    return request("tools/call", { name: name, arguments: args }).then(function (result) {
+      if (result && result.isError) {
+        throw new Error(errorText(result));
+      }
+      return extractPayload(result);
+    });
+  }
+
+  function currentItem() {
+    return state.queue[state.index] || null;
+  }
+
+  function submit(answer) {
+    var item = currentItem();
+    if (state.busy || !item || state.documentId === null) {
+      return;
+    }
+    var args = {
+      document_id: state.documentId,
+      item_type: item.item_type,
+      item_id: item.item_id,
+      answer: answer
+    };
+    if (state.confidence) {
+      args.confidence = state.confidence;
+    }
+    state.busy = true;
+    state.flash = null;
+    render();
+
+    callTool("submit_response", args).then(function (payload) {
+      state.progress = (payload && payload.progress) || state.progress;
+      if (payload && payload.is_correct) {
+        state.flash = { kind: "ok", text: "Correct!" };
+      } else if (item.item_type === "quiz") {
+        state.flash = { kind: "bad", text: "Incorrect — answer: " + item.answer };
+      } else {
+        state.flash = { kind: "bad", text: "Marked for review." };
+      }
+      state.index += 1;
+      state.revealed = false;
+      state.busy = false;
+      render();
+    }, function (error) {
+      state.flash = { kind: "bad", text: error.message };
+      state.busy = false;
+      render();
+    });
+  }
+
+  function refresh() {
+    if (state.busy || state.documentId === null) {
+      return;
+    }
+    state.busy = true;
+    state.flash = null;
+    render();
+
+    callTool("get_due_items", { document_id: state.documentId }).then(function (payload) {
+      loadQueue(payload);
+      state.busy = false;
+      render();
+    }, function (error) {
+      state.flash = { kind: "bad", text: error.message };
+      state.busy = false;
+      render();
+    });
+  }
+
+  /* --------------------------------------------------------------- render */
+
+  function element(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) {
+      node.className = className;
+    }
+    if (text !== undefined && text !== null) {
+      node.textContent = text;
+    }
+    return node;
+  }
+
+  function actionButton(label, onClick, className) {
+    var button = element("button", className, label);
+    button.disabled = state.busy;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function confidencePicker() {
+    var wrapper = element("div", "confidence");
+    var label = element("label", null, "Confidence");
+    var select = document.createElement("select");
+    select.disabled = state.busy;
+
+    var placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "not reported";
+    select.appendChild(placeholder);
+
+    CONFIDENCE_LEVELS.forEach(function (level) {
+      var option = document.createElement("option");
+      option.value = level;
+      option.textContent = level;
+      select.appendChild(option);
+    });
+
+    select.value = state.confidence;
+    select.addEventListener("change", function () {
+      state.confidence = select.value;
+    });
+
+    label.appendChild(select);
+    wrapper.appendChild(label);
+    return wrapper;
+  }
+
+  function flashcardCard(item) {
+    var card = element("div", "card");
+    card.appendChild(element("p", "prompt", item.front));
+
+    if (!state.revealed) {
+      var actions = element("div", "actions");
+      actions.appendChild(actionButton("Show answer", function () {
+        state.revealed = true;
+        render();
+      }));
+      card.appendChild(actions);
+      return card;
+    }
+
+    card.appendChild(element("p", "answer", item.back));
+    var graded = element("div", "actions");
+    graded.appendChild(actionButton("I got it", function () {
+      submit("correct");
+    }));
+    graded.appendChild(actionButton("I missed it", function () {
+      submit("incorrect");
+    }));
+    card.appendChild(graded);
+    card.appendChild(confidencePicker());
+    return card;
+  }
+
+  function quizCard(item) {
+    var card = element("div", "card");
+    card.appendChild(element("p", "prompt", item.question));
+
+    if (item.question_type === "multiple_choice") {
+      var options = element("div", "options");
+      (item.options || []).forEach(function (option) {
+        options.appendChild(actionButton(option, function () {
+          submit(option);
+        }));
+      });
+      card.appendChild(options);
+    } else {
+      var row = element("div", "actions");
+      var input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Your answer";
+      input.disabled = state.busy;
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (input.value.trim()) {
+            submit(input.value);
+          }
+        }
+      });
+      row.appendChild(input);
+      row.appendChild(actionButton("Submit", function () {
+        if (input.value.trim()) {
+          submit(input.value);
+        }
+      }));
+      card.appendChild(row);
+      window.setTimeout(function () {
+        if (!state.busy) {
+          input.focus();
+        }
+      }, 0);
+    }
+
+    card.appendChild(confidencePicker());
+    return card;
+  }
+
+  function caughtUpCard() {
+    var card = element("div", "card");
+    var done = state.queue.length > 0;
+    card.appendChild(element(
+      "p",
+      "prompt",
+      done ? "All caught up." : "Nothing is due right now."
+    ));
+    card.appendChild(element(
+      "p",
+      "muted",
+      done
+        ? "You answered every item that was due in this session."
+        : "Add study items, or come back when reviews fall due."
+    ));
+    var actions = element("div", "actions");
+    actions.appendChild(actionButton("Refresh due items", refresh));
+    card.appendChild(actions);
+    return card;
+  }
+
+  function progressFooter() {
+    var footer = element("div", "progress");
+    [
+      ["mastered", state.progress.mastered],
+      ["in progress", state.progress.in_progress],
+      ["to review", state.progress.to_review],
+      ["remaining", state.progress.remaining]
+    ].forEach(function (pair) {
+      var entry = element("div", null);
+      var value = element("strong", null, String(pair[1]));
+      entry.appendChild(value);
+      entry.appendChild(document.createTextNode(" " + pair[0]));
+      footer.appendChild(entry);
+    });
+    return footer;
+  }
+
+  function render() {
+    var app = document.getElementById("app");
+    app.textContent = "";
+
+    app.appendChild(element("h1", null, state.title || "Study session"));
+
+    if (state.status) {
+      app.appendChild(element("p", "muted", state.status));
+      notifySize();
+      return;
+    }
+
+    var item = currentItem();
+    app.appendChild(element(
+      "p",
+      "muted",
+      item
+        ? "Item " + (state.index + 1) + " of " + state.queue.length + " due"
+        : "No items due"
+    ));
+
+    if (state.flash) {
+      app.appendChild(element("div", "flash " + state.flash.kind, state.flash.text));
+    }
+
+    if (!item) {
+      app.appendChild(caughtUpCard());
+    } else if (item.item_type === "flashcard") {
+      app.appendChild(flashcardCard(item));
+    } else {
+      app.appendChild(quizCard(item));
+    }
+
+    if (state.progress) {
+      app.appendChild(progressFooter());
+    }
+
+    notifySize();
+  }
+
+  render();
+  initialize();
+})();
+</script>
+</body>
+</html>

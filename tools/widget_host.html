@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MCP Apps host stub — Learning Tool study widget</title>
+<style>
+  body { font: 13px system-ui, sans-serif; margin: 0; padding: 12px; background: #fafafa; color: #18181b; }
+  h3 { margin: 0 0 4px; }
+  p.hint { margin: 0 0 8px; color: #52525b; }
+  #log { height: 200px; overflow: auto; background: #111; color: #4ade80;
+         font: 11px ui-monospace, SFMono-Regular, monospace; padding: 8px;
+         border-radius: 6px; white-space: pre-wrap; }
+  #log .in { color: #93c5fd; }
+  #log .note { color: #fde047; }
+  iframe { width: 100%; height: 520px; border: 1px solid #d4d4d8; border-radius: 8px;
+           background: #fff; margin-top: 10px; }
+  label { margin-right: 12px; }
+</style>
+</head>
+<body>
+<h3>MCP Apps host stub</h3>
+<p class="hint">
+  Implements the host half of the bridge for the study widget, exactly as
+  <code>rebuild/09-study-widget.md</code> specifies. Every message in both
+  directions is logged below. The widget and the due-items payload are served
+  live, so a reload always tests the current source.
+</p>
+<p>
+  <label><input type="radio" name="theme" value="light" checked> host theme: light</label>
+  <label><input type="radio" name="theme" value="dark"> host theme: dark</label>
+  <label><input type="checkbox" id="silent"> simulate a silent host</label>
+</p>
+<div id="log"></div>
+<iframe id="app" src="study.html" sandbox="allow-scripts"></iframe>
+
+<script>
+const logEl = document.getElementById("log");
+const frame = document.getElementById("app");
+const silentBox = document.getElementById("silent");
+let due = null;
+
+fetch("due.json")
+  .then((r) => r.json())
+  .then((d) => { due = d; note("loaded due payload: " + d.due_count + " item(s)"); })
+  .catch((e) => note("could not load due.json: " + e.message));
+
+function line(text, cls) {
+  const span = document.createElement("span");
+  if (cls) span.className = cls;
+  span.textContent = text + "\n";
+  logEl.appendChild(span);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+const note = (m) => line(">>> " + m, "note");
+
+function send(message) {
+  line("HOST -> APP  " + JSON.stringify(message), "in");
+  frame.contentWindow.postMessage(message, "*");
+}
+
+function theme() {
+  return document.querySelector('input[name="theme"]:checked').value;
+}
+
+window.addEventListener("message", (event) => {
+  if (event.source !== frame.contentWindow) return;
+  const m = event.data;
+  line("APP  -> HOST " + JSON.stringify(m));
+
+  if (m.method === "ui/initialize") {
+    if (silentBox.checked) {
+      note("silent-host mode: not answering (the widget should retry, then report)");
+      return;
+    }
+    // Validate the params the extension actually requires.
+    const p = m.params || {};
+    if (!p.appInfo) note("PROTOCOL ERROR: params.appInfo missing (clientInfo is base MCP, not this extension)");
+    if (!p.appCapabilities) note("PROTOCOL ERROR: params.appCapabilities missing");
+    if (p.capabilities || p.clientInfo) note("PROTOCOL ERROR: base-MCP fields present; a real host may ignore this request");
+
+    send({ jsonrpc: "2.0", id: m.id, result: {
+      protocolVersion: "2026-01-26",
+      hostCapabilities: {},
+      hostInfo: { name: "host-stub", version: "1" },
+      hostContext: { theme: theme(), styles: { variables: { "--background": theme() === "dark" ? "#0b0b0d" : "#ffffff" } } },
+    }});
+  } else if (m.method === "ui/notifications/initialized") {
+    note("APP IS READY — a real host clears its loading state here");
+    setTimeout(() => {
+      send({ jsonrpc: "2.0", method: "ui/notifications/tool-input",
+             params: { arguments: { document_id: (due && due.document_id) || 1 } } });
+      send({ jsonrpc: "2.0", method: "ui/notifications/tool-result",
+             params: { content: [{ type: "text", text: JSON.stringify(due) }], structuredContent: due } });
+    }, 80);
+  } else if (m.method === "tools/call") {
+    if (!["submit_response", "get_due_items"].includes(m.params.name)) {
+      note("UNEXPECTED TOOL: " + m.params.name + " (the widget must call only submit_response and get_due_items)");
+    }
+    const result = m.params.name === "submit_response"
+      ? { is_correct: true, progress: { mastered: 1, to_review: 0, remaining: 0, in_progress: 1, total: 2 } }
+      : due;
+    send({ jsonrpc: "2.0", id: m.id, result: {
+      content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result } });
+  }
+});
+
+document.querySelectorAll('input[name="theme"]').forEach((el) =>
+  el.addEventListener("change", () =>
+    send({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed",
+           params: { theme: theme(), styles: { variables: { "--background": theme() === "dark" ? "#0b0b0d" : "#ffffff" } } } })));
+</script>
+</body>
+</html>

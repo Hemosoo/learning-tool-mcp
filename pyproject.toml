@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "learning-tool-mcp"
+version = "0.7.0"
+description = "An MCP server that turns PDFs into flashcards and quizzes, with session tracking"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.12,<2",
+    "pypdf>=4,<6",
+    "pydantic>=2,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "ruff>=0.15,<1",
+]
+
+[project.scripts]
+learning-tool-mcp = "learning_tool.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/learning_tool"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP"]
+ignore = ["E501"]
