@@ -1,5 +1,9 @@
 # Learning Tool MCP
 
+[![CI](https://github.com/Hemosoo/learning-tool-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Hemosoo/learning-tool-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+
 An MCP server that turns your own PDFs into flashcards and quizzes, grades your
 answers, and schedules reviews with the SM-2 spaced-repetition algorithm.
 
@@ -126,9 +130,14 @@ Hosts without the extension ignore the widget and work exactly as before.
 ## Development
 
 ```bash
-pytest                    # the full suite, no network needed
+pytest                            # the full suite, no network needed
 ruff check . && ruff format --check .
+mypy --strict src/learning_tool   # the package
+mypy                              # tests and tools
 ```
+
+CI runs all of the above on Python 3.10 through 3.14 for every push and pull
+request, so a green local run means a green remote one.
 
 Changes to the study widget need more than the suite, which can only assert
 against the widget's source text. `tools/` holds the verification tools —
