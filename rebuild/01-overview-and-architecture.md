@@ -92,6 +92,8 @@ Two cross-cutting patterns:
 | `README.md` | User-facing: how it works diagram, tool table, setup, example session, widget section |
 | `CHANGELOG.md` | Keep-a-Changelog style, newest first |
 | `.env.example` | Documents the one environment variable |
+| `LICENSE` | MIT (0.7.0) |
+| `.github/workflows/` | The CI quality gate: lint, format, type-check and test on every supported Python version, plus the `tools/` contract checks and a wheel-contents check (0.7.1) |
 
 ## Error philosophy
 

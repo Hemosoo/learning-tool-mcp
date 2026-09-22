@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,8 +20,25 @@ import threading
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SERVER_BIN = REPO_ROOT / ".venv" / "bin" / "learning-tool-mcp"
+VENV_BIN = REPO_ROOT / ".venv" / "bin" / "learning-tool-mcp"
 WIDGET_URI = "ui://learning-tool/study"
+
+
+def server_command() -> list[str] | None:
+    """Locate the installed server.
+
+    Prefers the project's virtual environment, and falls back to the console
+    script on the PATH so this runs on a CI runner that has no venv.
+
+    Returns:
+        Argv for launching the server, or None when it is not installed.
+    """
+    if VENV_BIN.exists():
+        return [str(VENV_BIN)]
+    found = shutil.which("learning-tool-mcp")
+    if found:
+        return [found]
+    return None
 
 
 class StdioClient:
@@ -70,11 +88,13 @@ class StdioClient:
                 "params": params or {},
             }
         )
+        stdout = self._proc.stdout
+        assert stdout is not None  # Popen was given a pipe
         box: dict[str, str] = {}
         reader = threading.Thread(
-            target=lambda: box.setdefault("line", self._proc.stdout.readline()),
+            target=lambda: box.setdefault("line", stdout.readline()),
             daemon=True,
-        )  # type: ignore[union-attr]
+        )
         reader.start()
         reader.join(timeout)
         if not box.get("line"):
@@ -95,8 +115,10 @@ class StdioClient:
         Args:
             message: The message to send.
         """
-        self._proc.stdin.write(json.dumps(message) + "\n")  # type: ignore[union-attr]
-        self._proc.stdin.flush()  # type: ignore[union-attr]
+        stdin = self._proc.stdin
+        assert stdin is not None  # Popen was given a pipe
+        stdin.write(json.dumps(message) + "\n")
+        stdin.flush()
 
     def close(self) -> None:
         """Terminate the server."""
@@ -115,14 +137,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not SERVER_BIN.exists():
+    command = server_command()
+    if command is None:
         print(
-            f"server binary not found: {SERVER_BIN}\ninstall with: pip install -e '.[dev]'"
+            f"server not found at {VENV_BIN} nor on the PATH\n"
+            "install it with: pip install -e '.[dev]'"
         )
         return 1
 
     data_dir = Path(tempfile.mkdtemp())
-    client = StdioClient([str(SERVER_BIN)], data_dir)
+    client = StdioClient(command, data_dir)
     failures: list[str] = []
 
     def check(label: str, ok: bool, detail: str = "") -> None:

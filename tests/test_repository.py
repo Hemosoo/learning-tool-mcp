@@ -322,7 +322,10 @@ def test_due_items_put_most_overdue_first_then_never_reviewed(
 
     assert [item.id for item, _ in due] == [3, 1, 2]
     assert due[-1][1].next_review is None
-    assert due[0][1].next_review < due[1][1].next_review
+
+    first, second = due[0][1].next_review, due[1][1].next_review
+    assert first is not None and second is not None
+    assert first < second
 
 
 def test_items_not_yet_due_are_excluded(repo: Repository) -> None:

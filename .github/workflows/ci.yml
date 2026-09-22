@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      # The same checks, in the same order, as the documented local commands.
+      - name: Lint
+        run: ruff check .
+
+      - name: Format
+        run: ruff format --check .
+
+      - name: Type-check the package (strict)
+        run: mypy --strict src/learning_tool
+
+      - name: Type-check tests and tools
+        run: mypy
+
+      - name: Test
+        run: pytest -q
+
+  integration:
+    name: Server and widget contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      # Spec 10: the pytest suite cannot establish that the widget works.
+      # These two exit non-zero on failure; see tools/README.md.
+      - name: Drive the server over stdio
+        run: python tools/stdio_check.py
+
+      - name: Trace the widget's bridge messages
+        run: node tools/wire_trace.js
+
+  build:
+    name: Wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build
+        run: python -m pip install --upgrade pip build && python -m build
+
+      # The wheel must carry the widget, the typed marker and the licence,
+      # or an installed copy cannot serve the widget (spec 02).
+      - name: Check the wheel's contents
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          names = zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[-1]).namelist()
+          required = ["learning_tool/ui/study.html", "learning_tool/py.typed"]
+          missing = [n for n in required if n not in names]
+          if not any("LICENSE" in n for n in names):
+              missing.append("LICENSE")
+          print("\n".join(sorted(names)))
+          sys.exit(f"missing from wheel: {missing}" if missing else 0)
+          PY

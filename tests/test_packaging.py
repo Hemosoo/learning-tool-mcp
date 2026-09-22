@@ -24,7 +24,7 @@ def test_distribution_metadata(pyproject: dict) -> None:
     project = pyproject["project"]
 
     assert project["name"] == "learning-tool-mcp"
-    assert project["version"] == learning_tool.__version__ == "0.7.0"
+    assert project["version"] == learning_tool.__version__ == "0.7.1"
     assert project["requires-python"] == ">=3.10"
     assert project["description"] == (
         "An MCP server that turns PDFs into flashcards and quizzes, "
@@ -70,12 +70,28 @@ def test_no_llm_database_or_http_dependency_creeps_in(pyproject: dict) -> None:
         assert forbidden not in declared
 
 
-def test_dev_extra_is_pytest_and_ruff(pyproject: dict) -> None:
-    """The dev extra is exactly the test and lint tooling."""
+def test_dev_extra_is_the_test_lint_and_type_tooling(pyproject: dict) -> None:
+    """The dev extra is exactly the quality tooling, each bounded."""
     assert set(pyproject["project"]["optional-dependencies"]["dev"]) == {
         "pytest>=8,<9",
         "ruff>=0.15,<1",
+        "mypy>=1.11,<2",
     }
+
+
+def test_mypy_is_configured_over_package_tests_and_tools(pyproject: dict) -> None:
+    """Type checking is configured in the single config file, at the floor."""
+    mypy = pyproject["tool"]["mypy"]
+
+    assert mypy["python_version"] == "3.10"
+    assert set(mypy["files"]) == {"src", "tests", "tools"}
+
+
+def test_package_ships_a_typed_marker() -> None:
+    """Without py.typed, consumers are told the package is untyped."""
+    marker = Path(learning_tool.__file__).parent / "py.typed"
+
+    assert marker.is_file()
 
 
 def test_console_script_starts_the_stdio_server(pyproject: dict) -> None:

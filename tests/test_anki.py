@@ -22,32 +22,39 @@ from learning_tool.storage.models import (
 )
 
 
-def document(**overrides) -> Document:
+def document(
+    title: str = "Cell Biology",
+    flashcards: list[Flashcard] | None = None,
+    quiz_questions: list[QuizQuestion] | None = None,
+) -> Document:
     """Build a document with one flashcard and one quiz question.
 
     Args:
-        **overrides: Fields to replace on the default document.
+        title: The document title, which becomes the Anki tag.
+        flashcards: Flashcards to store; None uses the default single card.
+        quiz_questions: Questions to store; None uses the default single
+            multiple-choice question.
 
     Returns:
         The document.
     """
-    defaults = dict(
+    default_cards = [Flashcard(id=1, front="What is ATP?", back="Energy currency")]
+    default_questions = [
+        QuizQuestion(
+            id=2,
+            question="Which organelle makes ATP?",
+            answer="mitochondria",
+            question_type=QuestionType.MULTIPLE_CHOICE,
+            options=["mitochondria", "ribosome"],
+        )
+    ]
+    return Document(
         id=1,
-        title="Cell Biology",
+        title=title,
         source_path="/tmp/cell.pdf",
-        flashcards=[Flashcard(id=1, front="What is ATP?", back="Energy currency")],
-        quiz_questions=[
-            QuizQuestion(
-                id=2,
-                question="Which organelle makes ATP?",
-                answer="mitochondria",
-                question_type=QuestionType.MULTIPLE_CHOICE,
-                options=["mitochondria", "ribosome"],
-            )
-        ],
+        flashcards=default_cards if flashcards is None else flashcards,
+        quiz_questions=default_questions if quiz_questions is None else quiz_questions,
     )
-    defaults.update(overrides)
-    return Document(**defaults)
 
 
 def rows_of(csv_text: str) -> list[list[str]]:

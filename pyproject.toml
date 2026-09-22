@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "learning-tool-mcp"
-version = "0.7.0"
+version = "0.7.1"
 description = "An MCP server that turns PDFs into flashcards and quizzes, with session tracking"
 readme = "README.md"
 license = "MIT"
@@ -20,6 +20,7 @@ dependencies = [
 dev = [
     "pytest>=8,<9",
     "ruff>=0.15,<1",
+    "mypy>=1.11,<2",
 ]
 
 [project.scripts]
@@ -31,6 +32,13 @@ packages = ["src/learning_tool"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+# The package is checked with --strict; tests and tools with these defaults.
+# Two invocations rather than a per-module override, because per-module
+# strictness also tightens the test files that import the package.
+[tool.mypy]
+python_version = "3.10"
+files = ["src", "tests", "tools"]
 
 [tool.ruff]
 line-length = 88

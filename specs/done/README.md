@@ -12,3 +12,4 @@ Feature specs move here from `specs/open/` once they ship.
 |------|---------|---------------|
 | `anki-csv-export.md` | 0.7.0 | The `export_document` tool and the pure `export.anki` renderer, taking the catalog to 12 tools |
 | `surface-confidence-in-stats.md` | 0.7.0 | The `confidence` breakdown on session state, and therefore on `submit_response` progress |
+| `continuous-integration.md` | 0.7.1 | mypy adoption, the `py.typed` marker, and the GitHub Actions quality gate. Took the CI and mypy halves of the roadmap's "Packaging, CI, and LICENSE" entry; PyPI publication stays open |

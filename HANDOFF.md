@@ -1,6 +1,6 @@
 # Handoff
 
-State of the build as of 2026-09-16 (version 0.7.0), written for whoever (or
+State of the build as of 2026-09-22 (version 0.7.1), written for whoever (or
 whatever) picks this up next. It is not part of the specified repository layout in
 `rebuild/01-overview-and-architecture.md`; delete it once it stops being true.
 
@@ -200,8 +200,18 @@ cd <repo>
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format --check .
 ```
 
-Both must be clean before any change is considered done. For a change that
-touches `ui/study.html`, these are necessary but not sufficient — add:
+Both must be clean before any change is considered done, and since 0.7.1 so
+must type checking:
+
+```bash
+.venv/bin/python -m mypy --strict src/learning_tool   # the package
+.venv/bin/python -m mypy                              # tests and tools
+```
+
+All of this now runs in CI on every push and pull request, across Python 3.10
+to 3.14, so a red badge means one of these commands fails locally too. For a
+change that touches `ui/study.html`, these are necessary but not sufficient —
+add:
 
 ```bash
 .venv/bin/python tools/stdio_check.py     # registration and metadata
@@ -218,20 +228,21 @@ passing review.
 **Nothing is blocked, and no decision is pending.** The two 0.7.0 features
 are built and their specs have moved to `specs/done/`. What remains:
 
-1. **`rebuild/future/deferred-roadmap.md`** — semantic chunking,
-   packaging/CI/LICENSE, a widget confidence display, mind maps, knowledge
-   graphs, multi-user. Direction only. Each needs a spec written to the
-   quality of the others in `rebuild/` before any of it is built, and the
-   roadmap says so itself. Do not build from the roadmap directly.
-2. **Version control** — still unresolved, and still the thing most likely to
-   cause damage. See the Environment section: the enclosing git repository is
-   the user's home directory and nothing here is tracked. Ask before
-   initialising anything.
-3. **Widget confidence display** — now genuinely available, since the data
-   reaches the widget already: `submit_response` returns session state as its
-   progress field, so the confidence mapping is in the widget's hands
+1. **`rebuild/future/deferred-roadmap.md`** — semantic chunking, PyPI
+   publication, a widget confidence display, mind maps, knowledge graphs,
+   multi-user. Direction only. Each needs a spec written to the quality of
+   the others in `rebuild/` before any of it is built, and the roadmap says
+   so itself. Do not build from the roadmap directly.
+2. **PyPI publication** is the only part of "Packaging, CI, and LICENSE" left,
+   and it is blocked outside the repository: it needs a registered project
+   and a trusted publisher tied to this repository's release workflow. No
+   release workflow was landed in advance, deliberately — it could only fail.
+   Ask the user to do the account-side setup before writing one.
+3. **Widget confidence display** — the cheapest remaining feature, because the
+   data already reaches the widget: `submit_response` returns session state as
+   its progress field, so the confidence mapping is in the widget's hands
    untouched. The progress footer renders four counts and ignores the rest.
-   This is a roadmap entry, so it needs a spec first; the plumbing does not.
+   It is a roadmap entry, so it needs a spec first; the plumbing does not.
 
 One note on the roadmap's "Explicitly removed" section: server-side LLM
 generation was removed, not deferred. If a future request sounds like "have

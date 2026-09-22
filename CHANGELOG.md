@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](./CHANGELOG.md), and this project adheres to semantic
 versioning.
 
+## [0.7.1] - 2026-09-22
+
+### Added
+
+- Continuous integration: every push and pull request runs ruff, mypy and
+  the test suite on Python 3.10 through 3.14, plus the `tools/` server and
+  widget contract checks and a wheel-contents check.
+- mypy adopted: strict over the package, default over tests and tools, and
+  configured in `pyproject.toml`. Spec 02 had claimed the code was
+  mypy-clean since 0.1.0; that claim is now enforced rather than asserted.
+- `py.typed` marker, so consumers (and this project's own test suite) see
+  the package as typed instead of skipping every import.
+
+### Changed
+
+- `tools/stdio_check.py` falls back to the console script on the PATH when
+  there is no project virtual environment, so it runs on a CI runner.
+
 ## [0.7.0] - 2026-09-16
 
 ### Added
